@@ -40,7 +40,7 @@ export class FlightScene {
   private readonly trajectory: Trajectory
   private readonly clock = new Clock()
   private readonly grid = createGroundGrid()
-  private readonly worldAxes = new AxesHelper(18)
+  private readonly worldAxes = new AxesHelper(1)
   private animationFrame = 0
   private disposed = false
   private lastSnapshotAt = 0
@@ -60,6 +60,8 @@ export class FlightScene {
     this.playback = new PlaybackController(data)
     this.aircraft = new Aircraft(model, modelSizeMeters)
     this.trajectory = new Trajectory(data, modelSizeMeters)
+    this.worldAxes.visible = false
+    this.updateWorldAxesScale()
     this.scene.background = new Color(0x7897a2)
     this.scene.fog = new FogExp2(0x7897a2, 0.00135)
 
@@ -142,6 +144,7 @@ export class FlightScene {
   setAircraftSizeMeters(sizeMeters: number): void {
     this.aircraft.setSizeMeters(sizeMeters)
     this.trajectory.setReferenceSizeMeters(this.aircraft.modelSizeMeters)
+    this.updateWorldAxesScale()
   }
 
   setAltitudeMode(mode: AltitudeMode): void {
@@ -251,5 +254,11 @@ export class FlightScene {
       this.renderer.setPixelRatio(nextPixelRatio)
     }
     this.renderer.setSize(width, height, false)
+  }
+
+  private updateWorldAxesScale(): void {
+    // AxesHelper uses one-metre unit geometry. Keep this optional reference
+    // proportional to the selected aircraft instead of spanning a fixed 18 m.
+    this.worldAxes.scale.setScalar(this.aircraft.modelSizeMeters * 1.5)
   }
 }

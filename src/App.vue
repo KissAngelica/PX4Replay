@@ -46,7 +46,7 @@ const aircraftModel = ref<AircraftModel>('quadcopter')
 const aircraftSizeMeters = ref(2)
 const altitudeMode = ref<AltitudeMode>('fused')
 const showGrid = ref(true)
-const showWorldAxes = ref(true)
+const showWorldAxes = ref(false)
 const showBodyAxes = ref(true)
 const showFullPath = ref(true)
 const trailOnly = ref(false)
@@ -413,7 +413,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <small class="altitude-mode-note">
-        地面网格 = 起飞参考面 0 米；青色线 = 飞行轨迹；绿色竖线 = 世界坐标 Y 轴
+        地面网格 = 起飞参考面 0 米；青色曲线 = 飞行轨迹；世界轴默认关闭
       </small>
     </section>
 

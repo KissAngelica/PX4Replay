@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+dist/
+.DS_Store
+*.log
+*.ulg
+.idea/
+.vscode/
+src-tauri/target/
+src-tauri/gen/

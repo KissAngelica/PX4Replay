@@ -29,7 +29,7 @@ ULog 解析器使用 pyulog。建议在工程根目录创建虚拟环境：
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r tools/ulog_parser/requirements.txt
+.venv/bin/pip install -r tools/ulog_parser/requirements-build.txt
 npm run dev
 ```
 
@@ -40,7 +40,13 @@ npm run tauri dev
 npm run tauri build
 ```
 
-桌面端开发会优先使用 `.venv/bin/python`；也可通过 `PX4_REPLAY_PYTHON` 指定已安装 pyulog 的 Python。文件打开支持系统选择器、拖放与最近文件列表，解析失败时会显示可读错误。
+桌面端开发会优先使用 `.venv/bin/python`；也可通过 `PX4_REPLAY_PYTHON` 指定已安装 pyulog 的 Python。正式安装包使用 PyInstaller 冻结并由 Tauri `externalBin` 打包的 `ulog-parser` sidecar，目标主机无需安装 Python 或 pyulog。sidecar 必须在目标平台原生构建：
+
+```bash
+python3 tools/ulog_parser/build_sidecar.py
+```
+
+文件打开支持系统选择器、拖放与最近文件列表，解析失败时会显示可读错误。
 
 Windows 原生编译、解析器打包、安装包生成与验收步骤见 [WindowsBuild.md](WindowsBuild.md)。
 

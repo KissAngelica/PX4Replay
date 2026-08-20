@@ -125,11 +125,14 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(wrong_type.exception.code, "NOT_ULOG")
 
     def test_rejects_invalid_ulog_header(self):
-        with tempfile.NamedTemporaryFile(suffix=".ulg") as stream:
+        with tempfile.NamedTemporaryFile(suffix=".ulg", delete=False) as stream:
             stream.write(b"not a ulog")
-            stream.flush()
+            path = Path(stream.name)
+        try:
             with self.assertRaises(ParseError) as invalid:
-                parse_file(Path(stream.name))
+                parse_file(path)
+        finally:
+            path.unlink()
         self.assertEqual(invalid.exception.code, "NOT_ULOG")
 
 

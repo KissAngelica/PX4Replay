@@ -957,14 +957,25 @@ long_flight.ulg
 
 # 17. Phase 13 — macOS / Windows 发布
 
+## 自包含 ULog 解析器
+
+- [x] 使用 PyInstaller 冻结 Python、pyulog 和解析器
+- [x] 按目标三元组生成 Windows x64 / macOS sidecar
+- [x] 配置 Tauri `externalBin`
+- [x] Rust 发布版通过内置 sidecar 解析 ULog
+- [x] GitHub Actions 在各目标平台原生构建 sidecar
+- [x] Windows 在移除 Python PATH 后通过 sidecar 独立运行自检
+- [ ] 在未安装 Python 的干净 Windows 主机验证真实 `.ulg`
+- [ ] 在未安装 Python 的干净 macOS 主机验证真实 `.ulg`
+
 ## macOS
 
-- [ ] 配置 App Name
-- [ ] 配置 App Icon
-- [ ] 生成 `.app`
-- [ ] 生成 `.dmg`
+- [x] 配置 App Name
+- [x] 配置 App Icon
+- [x] 生成 `.app`
+- [x] 生成 `.dmg`
 - [ ] 测试 Apple Silicon
-- [ ] 预留 Code Signing
+- [x] 预留 Code Signing（当前使用 ad-hoc identity `-`）
 - [ ] 预留 Notarization
 
 ## Windows
@@ -983,12 +994,12 @@ Tauri Build
 .exe / .msi
 ```
 
-- [ ] 创建 GitHub Actions
-- [ ] Windows Build
-- [ ] `.exe`
-- [ ] `.msi`
+- [x] 创建 GitHub Actions
+- [x] Windows Build
+- [x] `.exe`
+- [x] `.msi`
 - [ ] Windows 10 测试
-- [ ] Windows 11 测试
+- [x] Windows 11 测试
 - [ ] WebView2 检查
 - [ ] Windows DPI 测试
 

@@ -1,0 +1,100 @@
+name: Build desktop packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            os: macos-latest
+            rust-target: aarch64-apple-darwin
+            tauri-args: --target aarch64-apple-darwin --bundles app,dmg
+            artifact-name: px4-flight-replay-macos-arm64
+            artifact-path: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - name: Windows x64
+            os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            tauri-args: --target x86_64-pc-windows-msvc --bundles nsis,msi
+            artifact-name: px4-flight-replay-windows-x64
+            artifact-path: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/px4-flight-replay.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            tools/ulog_parser/requirements.txt
+            tools/ulog_parser/requirements-build.txt
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install parser dependencies
+        run: python -m pip install -r tools/ulog_parser/requirements-build.txt
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Python parser tests
+        env:
+          PYTHONPATH: tools/ulog_parser
+        run: python -m unittest discover -s tools/ulog_parser/tests -v
+
+      - name: Build self-contained ULog parser sidecar
+        run: python tools/ulog_parser/build_sidecar.py
+
+      - name: Build Tauri packages
+        run: npm run tauri -- build ${{ matrix.tauri-args }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
+          if-no-files-found: error

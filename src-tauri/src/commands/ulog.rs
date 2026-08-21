@@ -1,31 +1,18 @@
-use std::{
-    env,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::PathBuf;
+
+#[cfg(debug_assertions)]
+use std::{env, path::Path, process::Command};
 
 use serde_json::Value;
-use tauri::Manager;
+use tauri_plugin_shell::ShellExt;
 
-fn parser_script(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let development = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../tools/ulog_parser/parse_ulog.py");
-    if development.is_file() {
-        return Ok(development);
-    }
+#[cfg(all(target_os = "windows", debug_assertions))]
+use std::os::windows::process::CommandExt;
 
-    let bundled = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("无法定位应用资源目录：{error}"))?
-        .join("tools/ulog_parser/parse_ulog.py");
-    if bundled.is_file() {
-        return Ok(bundled);
-    }
+#[cfg(all(target_os = "windows", debug_assertions))]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    Err("找不到 ULog 解析器脚本，请重新安装应用".to_string())
-}
-
+#[cfg(debug_assertions)]
 fn python_executable() -> PathBuf {
     if let Ok(configured) = env::var("PX4_REPLAY_PYTHON") {
         if !configured.trim().is_empty() {
@@ -61,8 +48,59 @@ fn parser_error(stderr: &[u8]) -> String {
         })
 }
 
-fn parse_ulog_blocking(
-    app: tauri::AppHandle,
+fn parser_result(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<String, String> {
+    if !success {
+        return Err(parser_error(stderr));
+    }
+    String::from_utf8(stdout.to_vec()).map_err(|_| "解析器返回了无效 UTF-8 数据".to_string())
+}
+
+#[cfg(debug_assertions)]
+fn run_development_parser(arguments: Vec<String>) -> Result<String, String> {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tools/ulog_parser/parse_ulog.py");
+    let mut command = Command::new(python_executable());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command
+        .arg(script)
+        .args(arguments)
+        .output()
+        .map_err(|error| format!("无法启动开发环境 Python ULog 解析器：{error}"))?;
+    parser_result(output.status.success(), &output.stdout, &output.stderr)
+}
+
+async fn execute_parser(
+    app: &tauri::AppHandle,
+    arguments: Vec<String>,
+) -> Result<String, String> {
+    #[cfg(debug_assertions)]
+    {
+        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/ulog_parser/parse_ulog.py");
+        if script.is_file() {
+            let development_arguments = arguments.clone();
+            return tauri::async_runtime::spawn_blocking(move || {
+                run_development_parser(development_arguments)
+            })
+            .await
+            .map_err(|error| format!("ULog 解析任务异常终止：{error}"))?;
+        }
+    }
+
+    let output = app
+        .shell()
+        .sidecar("ulog-parser")
+        .map_err(|error| format!("无法定位内置 ULog 解析器：{error}"))?
+        .args(arguments)
+        .output()
+        .await
+        .map_err(|error| format!("无法启动内置 ULog 解析器：{error}"))?;
+    parser_result(output.status.success(), &output.stdout, &output.stderr)
+}
+
+async fn parse_ulog_impl(
+    app: &tauri::AppHandle,
     path: String,
     topic: Option<String>,
     field: Option<String>,
@@ -83,35 +121,27 @@ fn parse_ulog_blocking(
         return Err("请选择 .ulg 文件".to_string());
     }
 
-    let mut command = Command::new(python_executable());
-    command.arg(parser_script(&app)?).arg(&input);
+    let mut arguments = vec![input.to_string_lossy().into_owned()];
     if let Some(topic) = topic {
         if topic.trim().is_empty() {
             return Err("Topic 名称不能为空".to_string());
         }
-        command.arg("--topic").arg(topic);
+        arguments.push("--topic".to_string());
+        arguments.push(topic);
     }
     if let Some(field) = field {
         if field.trim().is_empty() {
             return Err("字段名称不能为空".to_string());
         }
-        command.arg("--field").arg(field);
+        arguments.push("--field".to_string());
+        arguments.push(field);
     }
-    let output = command
-        .output()
-        .map_err(|error| format!("无法启动 Python ULog 解析器：{error}"))?;
-
-    if !output.status.success() {
-        return Err(parser_error(&output.stderr));
-    }
-    String::from_utf8(output.stdout).map_err(|_| "解析器返回了无效 UTF-8 数据".to_string())
+    execute_parser(app, arguments).await
 }
 
 #[tauri::command]
 pub async fn parse_ulog(app: tauri::AppHandle, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || parse_ulog_blocking(app, path, None, None))
-        .await
-        .map_err(|error| format!("ULog 解析任务异常终止：{error}"))?
+    parse_ulog_impl(&app, path, None, None).await
 }
 
 #[tauri::command]
@@ -121,9 +151,5 @@ pub async fn parse_ulog_topic(
     topic: String,
     field: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        parse_ulog_blocking(app, path, Some(topic), Some(field))
-    })
-        .await
-        .map_err(|error| format!("ULog Topic 解析任务异常终止：{error}"))?
+    parse_ulog_impl(&app, path, Some(topic), Some(field)).await
 }

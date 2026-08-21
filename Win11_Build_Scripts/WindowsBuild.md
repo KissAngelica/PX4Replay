@@ -6,12 +6,12 @@
 
 ## 1. 当前工程的 Windows 运行方式
 
-前端和 Rust 桌面壳可以直接编译为 Windows 程序。ULog 解析器目前是 `tools/ulog_parser/parse_ulog.py`，通过 Python 和 `pyulog` 启动，并不是已经冻结进安装包的独立 `.exe`。
+前端和 Rust 桌面壳可以直接编译为 Windows 程序。ULog 解析器由 PyInstaller 冻结为独立 `.exe`，并作为 Tauri sidecar 打入安装包。
 
 因此当前版本有两种使用方式：
 
-1. 开发、内部测试：在工程根目录创建 `.venv`。程序会自动使用 `.venv\Scripts\python.exe`，这是本文首先采用的方式。
-2. 对外发布：还需要把 Python 解析器冻结为 Tauri sidecar。第 8 节给出了做法和改造边界；未完成 sidecar 集成前，不要把安装包描述为“无需 Python 的独立发行版”。
+1. 开发、内部测试：在工程根目录创建 `.venv`。Debug 版本会自动使用 `.venv\Scripts\python.exe`。
+2. 对外发布：构建脚本会先冻结并验证 sidecar，再生成安装包；目标主机不需要 Python。
 
 也可以在启动程序前设置 `PX4_REPLAY_PYTHON`，显式指定已经安装 `pyulog` 的 Python：
 
@@ -128,7 +128,7 @@ npm run tauri dev
 - 使用 `OPEN LOG` 打开一份真实 `.ulg`，HUD、模型和轨迹同时出现。
 - 中文目录、空格目录和较长文件名均能打开。
 
-如果 `.ulg` 解析报“无法启动 Python”，执行：
+如果 Debug 模式下 `.ulg` 解析报“无法启动开发环境 Python ULog 解析器”，执行：
 
 ```powershell
 $env:PX4_REPLAY_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
@@ -183,17 +183,9 @@ npm run tauri -- build --bundles nsis,msi
 
 必须在另一台干净的 Windows 电脑或 Windows Sandbox/虚拟机上验收，不能只验证构建机上的 `.exe`。
 
-### 当前内部测试版本
+### 自包含发行版
 
-由于当前解析器仍依赖 Python，测试机需要 Python 3.12 和 `pyulog`，并在启动应用前设置：
-
-```powershell
-py -3.12 -m pip install pyulog
-$env:PX4_REPLAY_PYTHON = (py -3.12 -c "import sys; print(sys.executable)")
-& "C:\Program Files\PX4 飞行回放\PX4 飞行回放.exe"
-```
-
-注意：PowerShell 中的环境变量只对当前进程及其子进程有效。
+安装包内含 Python 运行时、pyulog 和解析器 sidecar。测试机不应安装 Python，也不应设置 `PX4_REPLAY_PYTHON`，以确认发行版没有隐式外部依赖。
 
 验收清单：
 
@@ -201,8 +193,8 @@ $env:PX4_REPLAY_PYTHON = (py -3.12 -c "import sys; print(sys.executable)")
 - 首次启动和二次启动均正常。
 - Windows 缩放 100%、150%、200% 下界面可用。
 - 普通用户权限下可打开日志，不要求管理员身份运行。
-- 无 Python 的机器上 Mock 数据仍可显示；真实 ULog 应给出清晰的解析器错误，而不是白屏或崩溃。
-- 有 Python/pyulog 的机器上，用实际飞行日志完整播放一次。
+- 无 Python 的机器上用实际飞行日志完整播放一次。
+- 临时移动或删除安装目录中的 `ulog-parser.exe` 后，真实 ULog 应给出清晰的内置解析器错误，而不是白屏或崩溃。
 - 暂停后将机体最大水平尺寸设为 `0.2 米`，确认飞机移动 `1 米` 等于移动 5 个机身尺寸；继续播放时不能改变尺寸。
 
 发布前生成 SHA-256：
@@ -214,16 +206,13 @@ Get-FileHash -Algorithm SHA256 .\src-tauri\target\release\bundle\msi\*.msi
 
 ## 8. 制作无需 Python 的正式发行版
 
-正式对外分发前，建议将解析器冻结成 Tauri sidecar。此步骤需要一次小型代码改造，不能只把 `.exe` 复制进安装包，因为当前 Rust 命令启动的是 Python 脚本。
+正式发行版已使用 Tauri sidecar。`build_win11.bat` 会自动执行以下步骤，无需手工复制文件。
 
 ### 8.1 在 Windows 上生成解析器 `.exe`
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install pyinstaller
-.\.venv\Scripts\pyinstaller.exe --clean --onefile --name ulog-parser .\tools\ulog_parser\parse_ulog.py
-
-New-Item -ItemType Directory -Force .\src-tauri\binaries
-Copy-Item .\dist\ulog-parser.exe .\src-tauri\binaries\ulog-parser-x86_64-pc-windows-msvc.exe
+.\.venv\Scripts\python.exe -m pip install -r .\tools\ulog_parser\requirements-build.txt
+.\.venv\Scripts\python.exe .\tools\ulog_parser\build_sidecar.py
 ```
 
 Tauri sidecar 必须带目标三元组后缀；Windows x64 的名字必须是：
@@ -234,18 +223,18 @@ ulog-parser-x86_64-pc-windows-msvc.exe
 
 ### 8.2 Tauri 配置与 Rust 调用
 
-后续集成需要完成以下改造：
+项目已经完成以下集成：
 
 1. 安装并初始化 Tauri 2 Shell plugin。
-2. 在 `src-tauri/tauri.conf.json` 的 `bundle` 下加入：
+2. 在 `src-tauri/tauri.conf.json` 的 `bundle` 下配置：
 
    ```json
    "externalBin": ["binaries/ulog-parser"]
    ```
 
-3. 将 `src-tauri/src/commands/ulog.rs` 从“Python + 脚本”改为 `app.shell().sidecar("ulog-parser")`，将 ULog 路径作为参数传入，并沿用当前的 stdout JSON 和 stderr 错误处理。
-4. 在 Windows CI 中先执行 PyInstaller，再执行 `tauri build`，确保 sidecar 在 Tauri 打包前已经生成。
-5. 在完全没有安装 Python 的干净系统中验证真实 `.ulg`。
+3. Release 版本通过 `app.shell().sidecar("ulog-parser")` 调用内置解析器；Debug 版本保留本地 Python 开发路径。
+4. Windows/macOS CI 在 `tauri build` 前分别原生生成对应 sidecar。
+5. 发布验收仍需在完全没有安装 Python 的干净系统中验证真实 `.ulg`。
 
 官方参考：
 
@@ -257,55 +246,9 @@ PyInstaller 单文件程序第一次启动会解压到临时目录，解析开�
 
 ## 9. GitHub Actions 自动构建
 
-建议在 `.github/workflows/windows-build.yml` 中使用 Windows runner。以下工作流适合手动触发并上传构建产物；它构建的是当前依赖 Python 的版本：
+项目已通过 `.github/workflows/build.yml` 在 Windows x64 和 macOS Apple Silicon runner 上原生构建 sidecar 与安装包。
 
-```yaml
-name: Windows Build
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: npm ci
-      - run: python -m venv .venv
-      - run: .\.venv\Scripts\python.exe -m pip install -r .\tools\ulog_parser\requirements.txt
-      - run: npm run typecheck
-      - run: npm test
-      - run: cargo check --manifest-path .\src-tauri\Cargo.toml
-      - run: npm run tauri -- build --bundles nsis,msi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: px4-flight-replay-windows-x64
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-          if-no-files-found: error
-```
-
-要生成无需 Python 的版本，应在 `tauri build` 前加入第 8.1 节的 PyInstaller 和重命名命令，并先完成第 8.2 节的应用集成。
+流水线依次安装 `requirements-build.txt`、运行 Python/前端测试、执行 `build_sidecar.py`，最后调用 `tauri build`。不要跳过 sidecar 步骤；Tauri 会在缺少当前目标三元组文件时让构建失败。
 
 ## 10. 常见故障
 
@@ -321,9 +264,9 @@ Visual Studio Build Tools 未安装 C++ 桌面工作负载，或安装后终端�
 
 检查 Windows 可选功能中的 VBSCRIPT，并先使用 `--bundles nsis` 生成可测试安装包。
 
-### 打开 ULog 提示无法启动 Python
+### Debug 模式打开 ULog 提示无法启动 Python
 
-确认 `.venv\Scripts\python.exe` 存在且其中安装了 `pyulog`，或设置 `PX4_REPLAY_PYTHON`。安装包测试机不会自动拥有构建机的 `.venv`。
+确认 `.venv\Scripts\python.exe` 存在且其中安装了 `pyulog`，或设置 `PX4_REPLAY_PYTHON`。Release 安装包不使用该路径；若 Release 报错，应检查安装目录中的 `ulog-parser.exe` 是否完整。
 
 ### 应用窗口白屏
 

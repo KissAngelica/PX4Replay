@@ -4,7 +4,7 @@
 
 当前已完成 Phase 1–12 的产品与工程主体：应用既可使用 5 分钟、30 Hz 的人工飞行数据演示，也可在 Tauri 桌面端选择或拖入 PX4 `.ulg` 日志进行解析和回放。
 
-场景内置固定翼、四旋翼和直升机三种程序化模型，可在播放过程中即时切换。暂停回放后，可通过 `0.2–20.0 米` 滑动栏严格设置机体最大水平尺寸；Three.js 世界单位、ULog NED 位移和地面单位均按 `1 单位 = 1 米` 处理，最小网格间隔为 1 米。四旋翼使用不同的机头/机尾造型与配色，便于判断航向。
+场景内置固定翼、四旋翼和直升机三种程序化模型，可在播放过程中即时切换。暂停回放后，可通过 `0.1–10.0 米` 滑动栏严格设置机体最大水平尺寸；Three.js 世界单位、ULog NED 位移和地面单位均按 `1 单位 = 1 米` 处理，最小网格间隔为 1 米。四旋翼使用不同的机头/机尾造型与配色，便于判断航向。
 
 回放支持可点击/拖动的独立时间轴、事件标记、键盘控制、Seek、Stop/Replay、`0.1×–10×` 倍速、位置/速度线性插值和四元数 SLERP。轨迹使用一次性 BufferGeometry，支持完整航迹、已飞航迹、限长尾迹及 Home/起终点标记。HUD 显示位置、姿态、GPS、电池等遥测，并支持字段显隐和状态告警。
 
@@ -29,7 +29,7 @@ ULog 解析器使用 pyulog。建议在工程根目录创建虚拟环境：
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r tools/ulog_parser/requirements.txt
+.venv/bin/pip install -r tools/ulog_parser/requirements-build.txt
 npm run dev
 ```
 
@@ -40,9 +40,28 @@ npm run tauri dev
 npm run tauri build
 ```
 
-桌面端开发会优先使用 `.venv/bin/python`；也可通过 `PX4_REPLAY_PYTHON` 指定已安装 pyulog 的 Python。文件打开支持系统选择器、拖放与最近文件列表，解析失败时会显示可读错误。
+桌面端开发会优先使用 `.venv/bin/python`；也可通过 `PX4_REPLAY_PYTHON` 指定已安装 pyulog 的 Python。正式安装包使用 PyInstaller 冻结并由 Tauri `externalBin` 打包的 `ulog-parser` sidecar，目标主机无需安装 Python 或 pyulog。sidecar 必须在目标平台原生构建：
 
-Windows 原生编译、解析器打包、安装包生成与验收步骤见 [WindowsBuild.md](WindowsBuild.md)。
+```bash
+python3 tools/ulog_parser/build_sidecar.py
+```
+
+文件打开支持系统选择器、拖放与最近文件列表，解析失败时会显示可读错误。
+
+### macOS 一键构建
+
+Finder 中双击 [macos_oneclick.command](MacOS_Build_Scripts/macos_oneclick.command)，即可依次完成依赖准备、代码检查、测试、自包含 ULog sidecar 构建以及 `.app`/DMG 打包。第一次执行需要联网下载 npm、pip 和 Cargo 依赖。
+
+也可在终端选择构建模式：
+
+```bash
+./MacOS_Build_Scripts/macos_oneclick.command        # .app + DMG
+./MacOS_Build_Scripts/macos_oneclick.command app    # 仅 .app
+./MacOS_Build_Scripts/macos_oneclick.command dmg    # 仅 DMG
+./MacOS_Build_Scripts/macos_oneclick.command check  # 仅检查、测试和 sidecar 自检
+```
+
+Windows 原生编译、解析器打包、安装包生成与验收步骤见 [WindowsBuild.md](Win11_Build_Scripts/WindowsBuild.md)。
 
 ## 验证
 

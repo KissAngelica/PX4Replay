@@ -86,7 +86,7 @@ if "%NEED_RESTART%"=="1" (
 echo.
 git --version
 node --version
-npm --version
+call npm --version
 py -3.12 --version
 rustc --version
 cargo --version
@@ -132,24 +132,66 @@ echo Installing npm dependencies...
 call npm ci
 if errorlevel 1 goto :fail
 
-if not exist "%PROJECT_DIR%.venv\Scripts\python.exe" (
-    echo Creating Python virtual environment...
-    py -3.12 -m venv .venv
-    if errorlevel 1 goto :fail
+set "VENV_PY=%PROJECT_DIR%.venv\Scripts\python.exe"
+set "RECREATE_VENV=0"
+
+if not exist "%VENV_PY%" (
+    echo Python virtual environment not found.
+    set "RECREATE_VENV=1"
 ) else (
-    echo Python virtual environment already exists.
+    echo Checking existing Python virtual environment...
+    "%VENV_PY%" -c "import sys; print(sys.executable)" >nul 2>&1
+    if errorlevel 1 (
+        echo [WARN] Existing .venv Python is broken.
+        set "RECREATE_VENV=1"
+    ) else (
+        "%VENV_PY%" -m pip --version >nul 2>&1
+        if errorlevel 1 (
+            echo [WARN] Existing .venv pip is broken or incomplete.
+            set "RECREATE_VENV=1"
+        ) else (
+            echo Existing Python virtual environment is healthy.
+        )
+    )
 )
 
-echo Upgrading pip...
-"%PROJECT_DIR%.venv\Scripts\python.exe" -m pip install --upgrade pip
+if "!RECREATE_VENV!"=="1" (
+    if exist "%PROJECT_DIR%.venv" (
+        echo Removing broken Python virtual environment...
+        rmdir /s /q "%PROJECT_DIR%.venv"
+        if exist "%PROJECT_DIR%.venv" (
+            echo [ERROR] Failed to remove .venv. Close programs using it and try again.
+            goto :fail
+        )
+    )
+
+    echo Creating Python virtual environment...
+    py -3.12 -m venv "%PROJECT_DIR%.venv"
+    if errorlevel 1 goto :fail
+)
+
+echo Ensuring pip is installed correctly...
+"%VENV_PY%" -m ensurepip --upgrade
 if errorlevel 1 goto :fail
 
-echo Installing ULog parser requirements...
-"%PROJECT_DIR%.venv\Scripts\python.exe" -m pip install -r "%PROJECT_DIR%tools\ulog_parser\requirements.txt"
+echo Upgrading pip...
+"%VENV_PY%" -m pip install --upgrade pip
+if errorlevel 1 goto :fail
+
+echo Verifying pip...
+"%VENV_PY%" -m pip --version
+if errorlevel 1 goto :fail
+
+echo Installing ULog parser build requirements...
+"%PROJECT_DIR%.venv\Scripts\python.exe" -m pip install -r "%PROJECT_DIR%tools\ulog_parser\requirements-build.txt"
 if errorlevel 1 goto :fail
 
 echo Checking pyulog...
 "%PROJECT_DIR%.venv\Scripts\python.exe" -c "from pyulog import ULog; print('pyulog OK')"
+if errorlevel 1 goto :fail
+
+echo Building self-contained ULog parser sidecar...
+"%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%tools\ulog_parser\build_sidecar.py"
 if errorlevel 1 goto :fail
 
 :done

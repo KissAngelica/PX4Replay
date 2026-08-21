@@ -8,9 +8,9 @@ set "PROJECT_DIR=%~dp0"
 cd /d "%PROJECT_DIR%"
 
 :: Build modes:
-::   build_win11.bat           -> checks + NSIS + MSI
-::   build_win11.bat nsis      -> checks + NSIS only
-::   build_win11.bat msi       -> checks + MSI only
+::   build_win11.bat           -> checks + sidecar + NSIS + MSI
+::   build_win11.bat nsis      -> checks + sidecar + NSIS only
+::   build_win11.bat msi       -> checks + sidecar + MSI only
 ::   build_win11.bat check     -> checks only
 ::   build_win11.bat dev       -> checks then tauri dev
 ::   build_win11.bat sidecar   -> build PyInstaller sidecar then NSIS+MSI
@@ -91,6 +91,15 @@ if errorlevel 1 (
 set "PYTHONPATH="
 
 echo.
+echo [SIDECAR] Installing/updating parser build dependencies...
+".venv\Scripts\python.exe" -m pip install -r .\tools\ulog_parser\requirements-build.txt
+if errorlevel 1 goto :fail
+
+echo Building and verifying self-contained ulog-parser.exe...
+".venv\Scripts\python.exe" .\tools\ulog_parser\build_sidecar.py
+if errorlevel 1 goto :fail
+
+echo.
 echo [5/6] Rust cargo check...
 cargo check --manifest-path .\src-tauri\Cargo.toml
 if errorlevel 1 goto :fail
@@ -104,31 +113,6 @@ if /I "%MODE%"=="dev" (
     call npm run tauri dev
     if errorlevel 1 goto :fail
     goto :success
-)
-
-:: ------------------------------------------------------------
-:: 4. Optional sidecar build
-:: ------------------------------------------------------------
-if /I "%MODE%"=="sidecar" (
-    echo.
-    echo [SIDEcar] Installing/updating PyInstaller...
-    ".venv\Scripts\python.exe" -m pip install pyinstaller
-    if errorlevel 1 goto :fail
-
-    echo Building ulog-parser.exe...
-    if exist "dist\ulog-parser.exe" del /q "dist\ulog-parser.exe"
-    ".venv\Scripts\pyinstaller.exe" --clean --onefile --name ulog-parser .\tools\ulog_parser\parse_ulog.py
-    if errorlevel 1 goto :fail
-
-    if not exist "src-tauri\binaries" mkdir "src-tauri\binaries"
-    copy /Y "dist\ulog-parser.exe" "src-tauri\binaries\ulog-parser-x86_64-pc-windows-msvc.exe" >nul
-    if errorlevel 1 goto :fail
-
-    echo Sidecar generated:
-    echo   src-tauri\binaries\ulog-parser-x86_64-pc-windows-msvc.exe
-    echo.
-    echo [IMPORTANT] This works only if Tauri externalBin and Rust sidecar invocation
-    echo             have already been integrated in the project.
 )
 
 :: ------------------------------------------------------------

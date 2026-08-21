@@ -62,6 +62,11 @@ def build() -> Path:
 
     with tempfile.TemporaryDirectory(prefix="px4-replay-sidecar-") as temporary:
         temporary_path = Path(temporary)
+        environment = os.environ.copy()
+        # Keep PyInstaller's cache inside this isolated build. This avoids
+        # depending on a writable ~/Library/Application Support directory on
+        # macOS and keeps local/CI builds reproducible.
+        environment["PYINSTALLER_CONFIG_DIR"] = str(temporary_path / "pyinstaller-config")
         subprocess.run(
             [
                 sys.executable,
@@ -81,6 +86,7 @@ def build() -> Path:
                 str(PARSER),
             ],
             cwd=ROOT,
+            env=environment,
             check=True,
         )
         frozen = temporary_path / "dist" / f"ulog-parser{extension}"
